@@ -827,8 +827,9 @@ st.set_page_config(
 # Load data
 @st.cache_data # a streamlit decorator, wraps function so its return value is cached across reruns.
 def load_data():
+    excel_path = BASE_DIR / 'Network_modelling_assignment_copy.xlsx'
     # Load Excel file from same directory
-    df = pd.read_excel('Network_modelling_assignment_copy.xlsx', 
+    df = pd.read_excel('excel_path', 
                        sheet_name='ShipmentData')
     
     # Set first row as column names and remove it from data
