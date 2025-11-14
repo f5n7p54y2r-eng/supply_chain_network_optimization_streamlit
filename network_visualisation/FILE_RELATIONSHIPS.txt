@@ -1,0 +1,222 @@
+╔═══════════════════════════════════════════════════════════════════════════╗
+║                                                                           ║
+║                    FILE RELATIONSHIPS & DEPENDENCIES                      ║
+║                                                                           ║
+╚═══════════════════════════════════════════════════════════════════════════╝
+
+
+┌───────────────────────────────────────────────────────────────────────────┐
+│                         CORE EXECUTION FLOW                               │
+└───────────────────────────────────────────────────────────────────────────┘
+
+    USER
+     │
+     ├─── Option 1: Manual Start ───────────────────────────────────┐
+     │                                                               │
+     │    1. pip install -r requirements.txt                        │
+     │    2. streamlit run network_dashboard.py                     │
+     │                                                               │
+     ├─── Option 2: Script Start ───────────────────────────────────┤
+     │                                                               │
+     │    ./run_dashboard.sh  (Mac/Linux)                           │
+     │    run_dashboard.bat   (Windows)                             │
+     │         │                                                     │
+     │         ├─> Checks Pythƒon                                    │
+     │         ├─> Installs requirements.txt                        │
+     │         └─> Runs network_dashboard.py                        │
+     │                                                               │
+     └─── Option 3: Test First ────────────────────────────────────┤
+                                                                     │
+          python3 test_setup.py                                     │
+               │                                                     │
+               ├─> Validates Python version                         │
+               ├─> Checks packages from requirements.txt            │
+               ├─> Verifies Network_modelling_*.xlsx exists         │
+               └─> Tests data loading                               │
+                                                                     │
+          If tests pass ──> streamlit run network_dashboard.py ────┘
+
+
+┌───────────────────────────────────────────────────────────────────────────┐
+│                    RUNTIME DEPENDENCIES                                   │
+└───────────────────────────────────────────────────────────────────────────┘
+
+    network_dashboard.py
+           │
+           ├─────> READS ──────> Network_modelling_assignment_copy.xlsx
+           │                     (6,923 shipment records)
+           │
+           ├─────> REQUIRES ───> requirements.txt packages:
+           │                     • streamlit (web framework)
+           │                     • pandas (data processing)
+           │                     • plotly (visualizations)
+           │                     • networkx (network graphs)
+           │                     • openpyxl (Excel reading)
+           │                     • numpy (numerical operations)
+           │
+           └─────> OUTPUTS ────> Web Dashboard on localhost:8501
+                                 • Overview Dashboard
+                                 • Network Graph
+                                 • Geographic Flow Map
+                                 • Sankey Diagram
+                                 • Detailed Statistics
+
+
+┌───────────────────────────────────────────────────────────────────────────┐
+│                    FILE CATEGORIES                                        │
+└───────────────────────────────────────────────────────────────────────────┘
+
+CATEGORY 1: ESSENTIAL (Required to Run)
+├── network_dashboard.py ............... Main application code
+├── Network_modelling_assignment_copy.xlsx ... Data source
+└── requirements.txt ................... Python dependencies
+
+CATEGORY 2: HELPER SCRIPTS (Make Life Easier)
+├── test_setup.py ...................... Pre-flight checks
+├── run_dashboard.sh ................... Mac/Linux launcher
+└── run_dashboard.bat .................. Windows launcher
+
+CATEGORY 3: PRIMARY DOCUMENTATION (User Guides)
+├── README.md .......................... Main documentation
+├── QUICKSTART.md ...................... Quick setup guide
+└── CHANGES_MADE.md .................... Technical fixes log
+
+CATEGORY 4: SECONDARY DOCUMENTATION (Additional Info)
+├── FIXED_README.md .................... Fix summary
+├── QUICK_START.txt .................... Text-based guide
+├── START_HERE.txt ..................... Detailed guide
+├── INDEX.md ........................... File directory
+├── DELIVERY_SUMMARY.md ................ Project summary
+└── DASHBOARD_PREVIEW.txt .............. Visual preview
+
+CATEGORY 5: SYSTEM FILES (Delete These)
+├── .DS_Store .......................... Mac system file
+└── .Rhistory .......................... R programming history
+
+
+┌───────────────────────────────────────────────────────────────────────────┐
+│                    DATA FLOW DIAGRAM                                      │
+└───────────────────────────────────────────────────────────────────────────┘
+
+    Excel File                  Python Script              Web Browser
+    ┌─────────┐                ┌──────────────┐           ┌──────────┐
+    │         │                │              │           │          │
+    │ Network_│   READS DATA   │  network_    │  SERVES   │ User     │
+    │ modelling ──────────────>│  dashboard   ├──────────>│ Interface│
+    │ *.xlsx  │                │  .py         │  HTTP     │          │
+    │         │                │              │  :8501    │          │
+    │ 6,923   │                │ • Loads data │           │ • Charts │
+    │ rows    │                │ • Processes  │           │ • Filters│
+    │         │                │ • Visualizes │           │ • Tables │
+    └─────────┘                └──────────────┘           └──────────┘
+         ▲                            │                         │
+         │                            │                         │
+         │                            ▼                         │
+         │                     ┌──────────────┐                │
+         │                     │              │                │
+         │                     │ requirements │                │
+         └─────────────────────│ .txt         │                │
+           IF DATA UPDATED     │              │                │
+                               │ Dependencies │                │
+                               └──────────────┘                │
+                                      ▲                         │
+                                      │                         │
+                                      └─────────────────────────┘
+                                        pip install -r
+
+
+┌───────────────────────────────────────────────────────────────────────────┐
+│                    DOCUMENTATION HIERARCHY                                │
+└───────────────────────────────────────────────────────────────────────────┘
+
+    NEW USER JOURNEY:
+    
+    START_HERE.txt ──> First file to read
+         │
+         ├──> QUICKSTART.md ──> Quick 4-step setup
+         │         │
+         │         └──> README.md ──> Detailed documentation
+         │
+         └──> QUICK_START.txt ──> Alternative quick guide
+    
+    
+    TECHNICAL USER JOURNEY:
+    
+    INDEX.md ──> File overview
+         │
+         ├──> CHANGES_MADE.md ──> What was fixed
+         │
+         ├──> FIXED_README.md ──> Fix summary
+         │
+         └──> DELIVERY_SUMMARY.md ──> Project details
+
+
+┌───────────────────────────────────────────────────────────────────────────┐
+│                    RECOMMENDED DELIVERY PACKAGES                          │
+└───────────────────────────────────────────────────────────────────────────┘
+
+PACKAGE A: MINIMAL (Just Make It Work)
+┌────────────────────────────────────┐
+│ ✅ network_dashboard.py            │
+│ ✅ Network_modelling_*.xlsx        │
+│ ✅ requirements.txt                │
+└────────────────────────────────────┘
+Total: 3 files, ~444 KB
+
+
+PACKAGE B: STANDARD (Professional Delivery)
+┌────────────────────────────────────┐
+│ ✅ network_dashboard.py            │
+│ ✅ Network_modelling_*.xlsx        │
+│ ✅ requirements.txt                │
+│ ✅ README.md                       │
+│ ✅ CHANGES_MADE.md                 │
+│ ✅ test_setup.py                   │
+│ ✅ run_dashboard.sh/.bat           │
+└────────────────────────────────────┘
+Total: 7 files, ~460 KB
+
+
+PACKAGE C: COMPLETE (Full Documentation)
+┌────────────────────────────────────┐
+│ ✅ All from Package B              │
+│ ✅ QUICKSTART.md                   │
+│ ✅ INDEX.md                        │
+│ ✅ DELIVERY_SUMMARY.md             │
+│ ✅ FIXED_README.md                 │
+│ ✅ QUICK_START.txt                 │
+│ ✅ START_HERE.txt                  │
+└────────────────────────────────────┘
+Total: 13-14 files, ~510 KB
+
+
+┌───────────────────────────────────────────────────────────────────────────┐
+│                    QUICK REFERENCE                                        │
+└───────────────────────────────────────────────────────────────────────────┘
+
+MUST HAVE (Won't work without):
+  • network_dashboard.py
+  • Network_modelling_assignment_copy.xlsx
+  • requirements.txt
+
+SHOULD HAVE (Professional delivery):
+  • README.md
+  • test_setup.py
+  • run_dashboard.sh or .bat
+
+NICE TO HAVE (Extra documentation):
+  • CHANGES_MADE.md
+  • QUICKSTART.md
+  • INDEX.md
+
+DON'T INCLUDE:
+  • .DS_Store
+  • .Rhistory
+  • DASHBOARD_PREVIEW.txt (too large, optional)
+
+
+╔═══════════════════════════════════════════════════════════════════════════╗
+║                                                                           ║
+║  RECOMMENDATION: Use PACKAGE B (Standard) for your final delivery        ║
+║                                                                           ║
+╚═══════════════════════════════════════════════════════════════════════════╝

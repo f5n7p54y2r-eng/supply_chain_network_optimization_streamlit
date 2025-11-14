@@ -1,0 +1,6 @@
+├── 🎯 Network 3 Script MAIN
+│   └── network3_brownfield_FTL_optimization.py
+│
+└── 📚 Documentation
+    ├── NETWORK3_BROWNFIELD_COMPLETE_GUIDE.md  ← Complete guide
+    └── LOGIC_REVIEW_compare.md                ← Old review (can delete)

@@ -1,0 +1,26 @@
+.venv/
+venv/
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+.env
+*.log
+# Default ignored files
+/shelf/
+/workspace.xml
+/.idea/
+/.xml
+# Ignored default folder with query files
+/queries/
+# Datasource local storage ignored files
+/dataSources/
+/dataSources.local.xml
+# Editor-based HTTP Client requests
+/httpRequests/
+.DS_Store
+
+# Excel temporary files
+~$*.xlsx
+~$*.xls
+*.tmp
+SCM_Network2_Optimisation/~$optimization_results_dock_compare.xlsx

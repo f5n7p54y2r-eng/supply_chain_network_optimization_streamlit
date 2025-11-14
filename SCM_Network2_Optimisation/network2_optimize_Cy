@@ -1,0 +1,439 @@
+"""
+Mixed Integer Linear Programming (MILP) for Supply Chain Network Optimization
+Optimizes cross-dock selection and shipment routing for 1-5 year horizons
+"""
+
+import pandas as pd
+import numpy as np
+from pulp import *
+import time
+
+def load_data(file_path):
+    """Load all data from Excel file"""
+
+    # Read Part1_Input sheet with proper structure
+    df_part1 = pd.read_excel(file_path, sheet_name='Part1_Input', header=None)
+
+    # Extract Suppliers
+    suppliers = ['GA30043', 'CA91720']
+
+    # Extract X-Docks
+    xdocks = ['NC27695', 'NY10006', 'TX75477', 'GA30113', 'IL61849']
+
+    # Extract Customers (demand points) - rows 7-34, column 4
+    customers = []
+    for i in range(7, 35):
+        cust = df_part1.iloc[i, 4]
+        if pd.notna(cust):
+            customers.append(str(cust))
+
+    print(f"Suppliers: {suppliers}")
+    print(f"X-Docks: {xdocks}")
+    print(f"Number of customers: {len(customers)}")
+
+    # Extract Distance: Supplier to Customer (columns 5-6, rows 7-34)
+    dist_supp_cust = {}
+    for i, cust in enumerate(customers):
+        row_idx = 7 + i
+        dist_supp_cust[(suppliers[0], cust)] = float(df_part1.iloc[row_idx, 5])
+        dist_supp_cust[(suppliers[1], cust)] = float(df_part1.iloc[row_idx, 6])
+
+    # Extract Distance: Supplier to X-Dock (columns 10-11, rows 7-11)
+    dist_supp_xdock = {}
+    for i, xdock in enumerate(xdocks):
+        row_idx = 7 + i
+        dist_supp_xdock[(suppliers[0], xdock)] = float(df_part1.iloc[row_idx, 10])
+        dist_supp_xdock[(suppliers[1], xdock)] = float(df_part1.iloc[row_idx, 11])
+
+    # Extract Distance: X-Dock to Customer (columns 15-19, rows 7-34)
+    dist_xdock_cust = {}
+    for i, cust in enumerate(customers):
+        row_idx = 7 + i
+        for j, xdock in enumerate(xdocks):
+            col_idx = 15 + j  # Start from column 15, not 14
+            dist_xdock_cust[(xdock, cust)] = float(df_part1.iloc[row_idx, col_idx])
+
+    # Extract Fixed Cost of Opening X-Dock (column 23, rows 3-7)
+    fixed_cost_xdock = {}
+    for i, xdock in enumerate(xdocks):
+        row_idx = 3 + i
+        fixed_cost_xdock[xdock] = float(df_part1.iloc[row_idx, 23])
+
+    # Extract Variable Cost - Inventory Processing Cost (column 23, rows 14-18)
+    var_cost_xdock = {}
+    for i, xdock in enumerate(xdocks):
+        row_idx = 14 + i
+        var_cost_xdock[xdock] = float(df_part1.iloc[row_idx, 23])
+
+    # Extract Variable Cost - Transportation (per kg per km) (row 24, column 21)
+    transport_cost_per_kg_km = float(df_part1.iloc[24, 21])
+
+    # Extract Supplier Capacities (rows 28-29, column 23)
+    supplier_capacity = {}
+    supplier_capacity[suppliers[0]] = float(df_part1.iloc[28, 23])
+    supplier_capacity[suppliers[1]] = float(df_part1.iloc[29, 23])
+
+    # Read Shipment Data
+    df_shipments = pd.read_excel(file_path, sheet_name='ShipmentData', header=1)
+
+    # Create mapping from zip code to customer name (with state prefix)
+    # Customer names are in format: STATEZIP (e.g., GA30303, CT6492)
+    zip_to_customer = {}
+    for cust in customers:
+        # Extract numeric part (zip code) from customer name
+        # Remove the state prefix (first 2 letters) to get zip
+        if len(cust) >= 6:
+            zip_str = cust[2:]  # Remove state prefix
+        else:
+            zip_str = cust
+
+        try:
+            zip_code = int(zip_str)
+            zip_to_customer[zip_code] = cust
+        except ValueError:
+            print(f"Warning: Could not extract zip from customer: {cust}")
+
+    # Aggregate annual demand by origin-destination pair
+    demand_annual = df_shipments.groupby(['Origin Zip', 'DestinationZip'])['Weight'].sum().to_dict()
+
+    # Convert to proper format with customer names
+    demand = {}
+    missing_customers = set()
+
+    for (origin, dest), weight in demand_annual.items():
+        # Convert origin zip to supplier format (suppliers also have STATEZIP format)
+        origin_str = None
+        origin_zip = str(int(origin))
+        for sup in suppliers:
+            sup_zip = sup[2:] if len(sup) >= 6 else sup  # Remove state prefix
+            if origin_zip == sup_zip:
+                origin_str = sup
+                break
+
+        if origin_str is None:
+            continue
+
+        # Convert destination zip to customer name
+        dest_int = int(dest)
+        if dest_int in zip_to_customer:
+            dest_str = zip_to_customer[dest_int]
+            demand[(origin_str, dest_str)] = float(weight)
+        else:
+            # Customer not in original list - add it with simple zip format
+            dest_str = str(dest_int)
+            if dest_str not in missing_customers:
+                missing_customers.add(dest_str)
+                customers.append(dest_str)
+
+                # For missing customers, we'll need to estimate distances
+                # Use average distance from existing customers
+                avg_dist_supp_cust = np.mean([v for v in dist_supp_cust.values()])
+                for sup in suppliers:
+                    dist_supp_cust[(sup, dest_str)] = avg_dist_supp_cust
+
+                avg_dist_xdock_cust = np.mean([v for v in dist_xdock_cust.values()])
+                for xdock in xdocks:
+                    dist_xdock_cust[(xdock, dest_str)] = avg_dist_xdock_cust
+
+            demand[(origin_str, dest_str)] = float(weight)
+
+    if missing_customers:
+        print(f"Warning: {len(missing_customers)} customers not in Part1_Input, using average distances:")
+        print(f"  {list(missing_customers)[:5]}...")
+
+    return {
+        'suppliers': suppliers,
+        'xdocks': xdocks,
+        'customers': customers,
+        'dist_supp_cust': dist_supp_cust,
+        'dist_supp_xdock': dist_supp_xdock,
+        'dist_xdock_cust': dist_xdock_cust,
+        'fixed_cost_xdock': fixed_cost_xdock,
+        'var_cost_xdock': var_cost_xdock,
+        'transport_cost_per_kg_km': transport_cost_per_kg_km,
+        'supplier_capacity': supplier_capacity,
+        'demand': demand,
+        'annual_total_demand': df_shipments['Weight'].sum()
+    }
+
+
+def solve_milp(data, num_years):
+    """
+    Solve the MILP for the given number of years
+
+    Decision Variables:
+    - y[j]: Binary variable, 1 if X-Dock j is opened, 0 otherwise
+    - x_direct[s,c]: Flow from supplier s directly to customer c
+    - x_via_xdock[s,j,c]: Flow from supplier s via X-Dock j to customer c
+    """
+
+    suppliers = data['suppliers']
+    xdocks = data['xdocks']
+    customers = data['customers']
+    demand = data['demand']
+
+    # Scale demand by number of years
+    demand_scaled = {key: val * num_years for key, val in demand.items()}
+
+    # Create the model
+    model = LpProblem(f"Network_Optimization_{num_years}Y", LpMinimize)
+
+    # Decision Variables
+    # Binary: X-Dock opening decisions
+    y = LpVariable.dicts("XDock_Open", xdocks, cat='Binary')
+
+    # Continuous: Direct flow from supplier to customer
+    x_direct = LpVariable.dicts("Direct_Flow",
+                                [(s, c) for s in suppliers for c in customers],
+                                lowBound=0, cat='Continuous')
+
+    # Continuous: Flow from supplier via X-Dock to customer
+    x_via_xdock = LpVariable.dicts("XDock_Flow",
+                                   [(s, j, c) for s in suppliers for j in xdocks for c in customers],
+                                   lowBound=0, cat='Continuous')
+
+    # Objective Function: Minimize total cost
+    # Total Cost = Fixed Cost + Transportation Cost + Processing Cost
+
+    # Fixed cost of opening X-Docks (one-time, but included in multi-year analysis)
+    fixed_costs = lpSum([data['fixed_cost_xdock'][j] * y[j] for j in xdocks])
+
+    # Transportation cost for direct shipments (supplier to customer)
+    transport_direct = lpSum([
+        x_direct[(s, c)] * data['dist_supp_cust'][(s, c)] * data['transport_cost_per_kg_km']
+        for s in suppliers for c in customers
+        if (s, c) in data['dist_supp_cust']
+    ])
+
+    # Transportation cost via X-Dock (supplier to X-Dock + X-Dock to customer)
+    transport_via_xdock = lpSum([
+        x_via_xdock[(s, j, c)] * (
+            data['dist_supp_xdock'][(s, j)] + data['dist_xdock_cust'][(j, c)]
+        ) * data['transport_cost_per_kg_km']
+        for s in suppliers for j in xdocks for c in customers
+        if (s, j) in data['dist_supp_xdock'] and (j, c) in data['dist_xdock_cust']
+    ])
+
+    # Processing cost at X-Docks
+    processing_cost = lpSum([
+        x_via_xdock[(s, j, c)] * data['var_cost_xdock'][j]
+        for s in suppliers for j in xdocks for c in customers
+    ])
+
+    model += fixed_costs + transport_direct + transport_via_xdock + processing_cost, "Total_Cost"
+
+    # Constraints
+
+    # 1. Demand satisfaction: For each (supplier, customer) pair, meet the demand
+    for s in suppliers:
+        for c in customers:
+            if (s, c) in demand_scaled:
+                model += (
+                    x_direct[(s, c)] +
+                    lpSum([x_via_xdock[(s, j, c)] for j in xdocks])
+                    == demand_scaled[(s, c)],
+                    f"Demand_{s}_{c}"
+                )
+            else:
+                # No demand for this pair
+                model += x_direct[(s, c)] == 0, f"NoDemand_Direct_{s}_{c}"
+                for j in xdocks:
+                    model += x_via_xdock[(s, j, c)] == 0, f"NoDemand_XDock_{s}_{j}_{c}"
+
+    # 2. Supplier capacity constraints
+    for s in suppliers:
+        model += (
+            lpSum([x_direct[(s, c)] for c in customers]) +
+            lpSum([x_via_xdock[(s, j, c)] for j in xdocks for c in customers])
+            <= data['supplier_capacity'][s] * num_years,
+            f"Supplier_Capacity_{s}"
+        )
+
+    # 3. X-Dock opening constraint: Can only use X-Dock if it's opened
+    # Using a big-M constraint
+    M = data['annual_total_demand'] * num_years * 2  # Big-M value
+
+    for j in xdocks:
+        model += (
+            lpSum([x_via_xdock[(s, j, c)] for s in suppliers for c in customers])
+            <= M * y[j],
+            f"XDock_Opening_{j}"
+        )
+
+    # Solve the model
+    print(f"\n{'='*80}")
+    print(f"Solving MILP for {num_years} year(s)...")
+    print(f"{'='*80}")
+
+    start_time = time.time()
+
+    # Use CBC solver (default, open-source)
+    solver = PULP_CBC_CMD(msg=1, timeLimit=300)  # 5 minute time limit
+    model.solve(solver)
+
+    solve_time = time.time() - start_time
+
+    # Extract results
+    results = {
+        'num_years': num_years,
+        'status': LpStatus[model.status],
+        'solve_time': solve_time,
+        'total_cost': value(model.objective),
+        'fixed_cost': value(fixed_costs),
+        'transport_direct': value(transport_direct),
+        'transport_via_xdock': value(transport_via_xdock),
+        'processing_cost': value(processing_cost),
+        'xdocks_opened': [j for j in xdocks if value(y[j]) > 0.5],
+        'direct_flow': {(s, c): value(x_direct[(s, c)])
+                       for s in suppliers for c in customers
+                       if value(x_direct[(s, c)]) > 0.01},
+        'xdock_flow': {(s, j, c): value(x_via_xdock[(s, j, c)])
+                      for s in suppliers for j in xdocks for c in customers
+                      if value(x_via_xdock[(s, j, c)]) > 0.01}
+    }
+
+    return results
+
+
+def print_results(results):
+    """Print optimization results in a formatted way"""
+
+    print(f"\n{'='*80}")
+    print(f"OPTIMIZATION RESULTS - {results['num_years']} YEAR(S)")
+    print(f"{'='*80}")
+    print(f"Status: {results['status']}")
+    print(f"Solve Time: {results['solve_time']:.2f} seconds")
+    print(f"\nCost Breakdown:")
+    print(f"  Fixed Cost (X-Dock opening):     ${results['fixed_cost']:,.2f}")
+    print(f"  Transportation (Direct):         ${results['transport_direct']:,.2f}")
+    print(f"  Transportation (Via X-Dock):     ${results['transport_via_xdock']:,.2f}")
+    print(f"  Processing Cost (X-Dock):        ${results['processing_cost']:,.2f}")
+    print(f"  {'─'*50}")
+    print(f"  TOTAL COST:                      ${results['total_cost']:,.2f}")
+    print(f"\nX-Docks Opened: {len(results['xdocks_opened'])}")
+    for xdock in results['xdocks_opened']:
+        print(f"  - {xdock}")
+
+    print(f"\nDirect Shipments: {len(results['direct_flow'])}")
+    total_direct = sum(results['direct_flow'].values())
+    print(f"  Total Weight (Direct): {total_direct:,.2f} kg")
+
+    print(f"\nX-Dock Shipments: {len(results['xdock_flow'])}")
+    total_xdock = sum(results['xdock_flow'].values())
+    print(f"  Total Weight (Via X-Dock): {total_xdock:,.2f} kg")
+
+    total_flow = total_direct + total_xdock
+    if total_flow > 0:
+        print(f"\nPercentage via X-Dock: {100 * total_xdock / total_flow:.2f}%")
+    else:
+        print(f"\nPercentage via X-Dock: N/A (no flow)")
+
+
+def create_summary_table(all_results):
+    """Create a summary comparison table for all time horizons"""
+
+    summary_data = []
+    for results in all_results:
+        summary_data.append({
+            'Years': results['num_years'],
+            'Total Cost ($)': results['total_cost'],
+            'Fixed Cost ($)': results['fixed_cost'],
+            'Transport Direct ($)': results['transport_direct'],
+            'Transport XDock ($)': results['transport_via_xdock'],
+            'Processing Cost ($)': results['processing_cost'],
+            'XDocks Opened': len(results['xdocks_opened']),
+            'XDock Names': ', '.join(results['xdocks_opened']),
+            'Solve Time (s)': results['solve_time']
+        })
+
+    df_summary = pd.DataFrame(summary_data)
+
+    print(f"\n{'='*80}")
+    print("SUMMARY COMPARISON TABLE")
+    print(f"{'='*80}")
+    print(df_summary.to_string(index=False))
+
+    return df_summary
+
+
+def main():
+    """Main execution function"""
+
+    # File path
+    file_path = '../data/Network_modelling_assignment.xlsx'
+
+    print("Loading data from Excel file...")
+    data = load_data(file_path)
+
+    print(f"\nData Summary:")
+    print(f"  Suppliers: {len(data['suppliers'])}")
+    print(f"  X-Docks: {len(data['xdocks'])}")
+    print(f"  Customers: {len(data['customers'])}")
+    print(f"  Annual Total Demand: {data['annual_total_demand']:,.2f} kg")
+    print(f"  Transport Cost: ${data['transport_cost_per_kg_km']:.4f} per kg per km")
+
+    # Solve for 1, 2, 3, 4, and 5 years
+    all_results = []
+    for num_years in [1, 2, 3, 4, 5]:
+        results = solve_milp(data, num_years)
+        print_results(results)
+        all_results.append(results)
+
+    # Create summary table
+    df_summary = create_summary_table(all_results)
+
+    # Save summary to Excel
+    output_file = './optimization_results.xlsx'
+
+    with pd.ExcelWriter(output_file, engine='openpyxl') as writer:
+        df_summary.to_excel(writer, sheet_name='Summary', index=False)
+
+        # Add detailed results for each year
+        for results in all_results:
+            sheet_name = f'{results["num_years"]}Year'
+
+            # Create detailed sheets
+            df_xdocks = pd.DataFrame([
+                {'XDock': xdock, 'Status': 'Opened'}
+                for xdock in results['xdocks_opened']
+            ])
+
+            df_direct = pd.DataFrame([
+                {'Supplier': s, 'Customer': c, 'Flow_kg': flow}
+                for (s, c), flow in results['direct_flow'].items()
+            ])
+
+            df_xdock_flow = pd.DataFrame([
+                {'Supplier': s, 'XDock': j, 'Customer': c, 'Flow_kg': flow}
+                for (s, j, c), flow in results['xdock_flow'].items()
+            ])
+
+            # Write to different starting rows
+            df_summary_single = pd.DataFrame([{
+                'Years': results['num_years'],
+                'Total Cost': results['total_cost'],
+                'Fixed Cost': results['fixed_cost'],
+                'Transport Direct': results['transport_direct'],
+                'Transport XDock': results['transport_via_xdock'],
+                'Processing Cost': results['processing_cost']
+            }])
+
+            df_summary_single.to_excel(writer, sheet_name=sheet_name, startrow=0, index=False)
+            df_xdocks.to_excel(writer, sheet_name=sheet_name, startrow=3, index=False)
+
+            if not df_direct.empty:
+                df_direct.to_excel(writer, sheet_name=sheet_name,
+                                  startrow=3 + len(df_xdocks) + 3, index=False)
+
+            if not df_xdock_flow.empty:
+                start_row = 3 + len(df_xdocks) + 3 + (len(df_direct) if not df_direct.empty else 0) + 3
+                df_xdock_flow.to_excel(writer, sheet_name=sheet_name,
+                                      startrow=start_row, index=False)
+
+    print(f"\n{'='*80}")
+    print(f"Results saved to: {output_file}")
+    print(f"{'='*80}")
+
+
+if __name__ == "__main__":
+    main()
